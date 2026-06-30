@@ -9,10 +9,5 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint"
-  },
-  "devDependencies": {
-    "eslint": "^10.6.0",
-    "prettier": "^3.9.4",
-    "turbo": "^2.10.1"
   }
 }
