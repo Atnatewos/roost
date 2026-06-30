@@ -1,0 +1,19 @@
+{
+  "buildCommand": "npx prisma generate",
+  "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/src/index.js"
+    }
+  ],
+  "functions": {
+    "src/index.js": {
+      "memory": 512,
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

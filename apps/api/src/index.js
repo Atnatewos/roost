@@ -6,35 +6,21 @@ import { prisma } from './config/index.js';
 
 /**
  * ROOST API Server Entry Point.
- * Starts the Express server and connects to the database.
+ * Works as both a standalone Express server and a Vercel serverless function.
+ * When deployed on Vercel, the serverless runtime calls the exported handler.
+ * In development, it starts a regular Express server on the configured port.
  */
 
-// Read port from environment with fallback
 const PORT = process.env.PORT || 5000;
 
-// Graceful shutdown handler
-const gracefulShutdown = async (signal) => {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
-  try {
-    await prisma.$disconnect();
-    console.log('Database connection closed.');
-    process.exit(0);
-  } catch (error) {
-    console.error('Error during shutdown:', error);
-    process.exit(1);
-  }
-};
-
-// Start server
+// Connect to database and start server (development mode)
 const startServer = async () => {
   try {
-    // Verify database connection
     await prisma.$connect();
     console.log('Database connected successfully.');
 
     app.listen(PORT, () => {
       console.log(`ROOST API server running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
     });
   } catch (error) {
@@ -43,8 +29,11 @@ const startServer = async () => {
   }
 };
 
-// Handle shutdown signals
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+// In development, start the Express server normally
+if (process.env.NODE_ENV !== 'production') {
+  startServer();
+}
 
-startServer();
+// Export the Express app for Vercel serverless deployment
+// Vercel wraps this in a serverless function handler automatically
+export default app;
