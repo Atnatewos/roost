@@ -1,15 +1,23 @@
 // apps/web/src/contexts/AuthContext.jsx
 
 import { createContext, useState, useEffect, useCallback } from 'react';
-import { getCurrentUser, getStoredUser, isAuthenticated, logoutUser } from '../services/auth';
+import { getCurrentUser, getStoredUser, getStoredToken, logoutUser } from '../services/auth';
 
 /**
- * Authentication context providing user state and auth operations
- * to the entire application.
+ * Authentication Context
  * 
- * Consumed via useAuth() hook for accessing user data and auth methods
- * from any component in the tree.
+ * Provides user state and authentication operations to the entire application.
+ * Uses sessionStorage for token persistence - each browser tab maintains
+ * its own isolated session. This enables multi-account workflows where
+ * a host can be logged in on one tab while a guest uses another.
+ * 
+ * Session Restoration Flow:
+ * 1. On mount, check sessionStorage for existing token
+ * 2. If token exists, verify with the server
+ * 3. If valid, restore the user session
+ * 4. If invalid/expired, clear session data
  */
+
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
@@ -18,17 +26,27 @@ export const AuthProvider = ({ children }) => {
   const [isAuth, setIsAuth] = useState(false);
 
   /**
-   * Restore user session from localStorage and verify token validity.
-   * Runs once on app mount to persist login across page refreshes.
+   * Restore user session from sessionStorage.
+   * 
+   * Runs once on component mount to persist login across page refreshes
+   * within the same tab. Does NOT restore across tabs - each tab
+   * requires its own authentication.
+   * 
+   * Flow:
+   * 1. Check for cached user data in sessionStorage (instant UI)
+   * 2. Verify token validity with the server (background)
+   * 3. Update or clear state based on server response
    */
   const restoreSession = useCallback(async () => {
-    // Quick check without API call first
-    if (!isAuthenticated()) {
+    const token = getStoredToken();
+    
+    // No token in this tab - user is not authenticated
+    if (!token) {
       setLoading(false);
       return;
     }
 
-    // Restore cached user data immediately for fast UI render
+    // Restore cached user data immediately for fast UI rendering
     const storedUser = getStoredUser();
     if (storedUser) {
       setUser(storedUser);
@@ -36,19 +54,31 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      // Verify token is still valid with the server
+      // Verify the token is still valid with the server
       const response = await getCurrentUser();
+      
       if (response.success) {
         setUser(response.data.user);
         setIsAuth(true);
-        localStorage.setItem('roost_user', JSON.stringify(response.data.user));
+        
+        // Update cached user data with fresh server response
+        try {
+          sessionStorage.setItem('roost_user', JSON.stringify(response.data.user));
+        } catch {
+          // sessionStorage write failed - non-critical, user is still authenticated
+        }
       }
     } catch {
-      // Token expired or invalid - clear everything
+      // Token expired or invalid - clear everything from this tab
       setUser(null);
       setIsAuth(false);
-      localStorage.removeItem('roost_token');
-      localStorage.removeItem('roost_user');
+      
+      try {
+        sessionStorage.removeItem('roost_token');
+        sessionStorage.removeItem('roost_user');
+      } catch {
+        // Cleanup failed - user state is already cleared
+      }
     } finally {
       setLoading(false);
     }
@@ -59,17 +89,25 @@ export const AuthProvider = ({ children }) => {
   }, [restoreSession]);
 
   /**
-   * Update user state and persist to localStorage.
-   * Called after login, register, or profile updates.
+   * Update user state and persist to sessionStorage.
+   * Called after successful login, registration, or profile updates.
+   * 
+   * @param {Object} userData - Fresh user data from the server
    */
   const updateUser = (userData) => {
     setUser(userData);
     setIsAuth(true);
-    localStorage.setItem('roost_user', JSON.stringify(userData));
+    
+    try {
+      sessionStorage.setItem('roost_user', JSON.stringify(userData));
+    } catch {
+      // Non-critical - user is still authenticated in memory
+    }
   };
 
   /**
-   * Clear user state and remove stored auth data.
+   * Clear user state and remove stored session data.
+   * Logs out only the current tab - other tabs are unaffected.
    */
   const logout = () => {
     setUser(null);

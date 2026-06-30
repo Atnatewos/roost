@@ -4,12 +4,20 @@ import axios from 'axios';
 import { appConfig } from '@roost/config';
 
 /**
- * Axios instance pre-configured with ROOST API settings.
- * Includes automatic token attachment, request/response interceptors,
- * and standardized error handling.
+ * Axios HTTP Client Configuration
+ * 
+ * Base URL is automatically detected from the current environment
+ * via the shared config package. No hardcoded URLs anywhere.
+ * 
+ * - Production: https://rooststay.vercel.app/api (auto-detected)
+ * - Development: http://localhost:5000/api (via Vite proxy)
+ * 
+ * Security:
+ * - JWT token is attached to every request from sessionStorage
+ * - 401 responses trigger automatic session cleanup
+ * - Network errors are caught and surfaced to the user
  */
 
-// Create axios instance with base configuration from config
 const api = axios.create({
   baseURL: appConfig.api.baseUrl,
   timeout: appConfig.api.timeout,
@@ -19,13 +27,22 @@ const api = axios.create({
 });
 
 /**
- * Request interceptor.
- * Attaches the JWT token to every outgoing request if available.
- * The token is stored in localStorage after successful login.
+ * Request Interceptor
+ * 
+ * Attaches the JWT authentication token to every outgoing request.
+ * The token is read from sessionStorage, which is scoped to the
+ * current browser tab. This means different tabs can have different
+ * authenticated users without conflict.
  */
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('roost_token');
+    let token = null;
+    
+    try {
+      token = sessionStorage.getItem('roost_token');
+    } catch {
+      // sessionStorage unavailable - request proceeds without auth
+    }
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -39,18 +56,22 @@ api.interceptors.request.use(
 );
 
 /**
- * Response interceptor.
- * Handles common response scenarios:
- * - 401 Unauthorized: Clears token and redirects to login
- * - Other errors: Passes through for component-level handling
+ * Response Interceptor
+ * 
+ * Handles common API response scenarios:
+ * - Successful responses pass through to the calling code
+ * - 401 Unauthorized clears the session and redirects to login
+ * - Network errors surface a user-friendly message
+ * 
+ * Session cleanup on 401 is scoped to the current tab only.
+ * Other tabs with different sessions are unaffected.
  */
 api.interceptors.response.use(
   (response) => {
-    // Simply return the response data for successful requests
     return response.data;
   },
   (error) => {
-    // Handle network errors (no response from server)
+    // Network error - server unreachable
     if (!error.response) {
       console.error('Network error: Unable to reach the server.');
       return Promise.reject({
@@ -59,10 +80,14 @@ api.interceptors.response.use(
       });
     }
 
-    // Handle authentication errors
+    // Authentication error - token expired or invalid
     if (error.response.status === 401) {
-      localStorage.removeItem('roost_token');
-      localStorage.removeItem('roost_user');
+      try {
+        sessionStorage.removeItem('roost_token');
+        sessionStorage.removeItem('roost_user');
+      } catch {
+        // Cleanup failed - redirect anyway
+      }
 
       // Only redirect if not already on the login page
       if (window.location.pathname !== '/login') {
@@ -70,7 +95,7 @@ api.interceptors.response.use(
       }
     }
 
-    // Return the error response data for component handling
+    // Pass the error through for component-level handling
     return Promise.reject(error.response.data);
   }
 );
