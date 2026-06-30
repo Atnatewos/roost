@@ -1,5 +1,11 @@
 {
-  "buildCommand": "cd apps/web && npm run build",
+  "buildCommand": "cd apps/web && npm install && npx vite build && cd ../.. && cd apps/api && npx prisma generate",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ]
 }
