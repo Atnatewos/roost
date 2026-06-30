@@ -1,0 +1,158 @@
+// apps/api/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  phone        String    @unique
+  password     String
+  fullName     String
+  avatar       String?
+  role         Role      @default(GUEST)
+  isVerified   Boolean   @default(false)
+  faydaId      String?   @unique
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  listings     Listing[]
+  bookings     Booking[]
+  reviews      Review[]
+  messages     Message[]
+
+  @@map("users")
+}
+
+enum Role {
+  GUEST
+  HOST
+  ADMIN
+}
+
+model Listing {
+  id              String        @id @default(cuid())
+  hostId          String
+  host            User          @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  title           String
+  slug            String        @unique
+  description     String
+  propertyType    String
+  placeType       String
+  address         String
+  city            String
+  subcity         String?
+  kebele          String?
+  latitude        Float?
+  longitude       Float?
+  bedrooms        Int           @default(1)
+  bathrooms       Int           @default(1)
+  maxGuests       Int           @default(2)
+  basePrice       Float
+  cleaningFee     Float         @default(0)
+  weeklyDiscount  Float         @default(0)
+  monthlyDiscount Float         @default(0)
+  amenities       String[]      @default([])
+  status          ListingStatus @default(DRAFT)
+  averageRating   Float         @default(0)
+  reviewCount     Int           @default(0)
+  bookingCount    Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  images          ListingImage[]
+  bookings        Booking[]
+  reviews         Review[]
+
+  @@index([city])
+  @@index([status])
+  @@index([basePrice])
+  @@map("listings")
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model ListingImage {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  url       String
+  publicId  String
+  isPrimary Boolean  @default(false)
+  order     Int      @default(0)
+
+  @@map("listing_images")
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  listingId       String
+  listing         Listing       @relation(fields: [listingId], references: [id])
+  guestId         String
+  guest           User          @relation(fields: [guestId], references: [id])
+  checkIn         DateTime
+  checkOut        DateTime
+  guestCount      Int
+  totalPrice      Float
+  status          BookingStatus @default(PENDING_PAYMENT)
+  paymentMethod   String?
+  paymentProof    String?
+  transactionId   String?
+  specialRequests String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  messages        Message[]
+  review          Review?
+
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  PAYMENT_UPLOADED
+  PAYMENT_CONFIRMED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  rating    Int
+  content   String?
+  createdAt DateTime @default(now())
+
+  @@map("reviews")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  content   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}

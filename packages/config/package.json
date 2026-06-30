@@ -1,0 +1,6 @@
+{
+  "name": "@roost/config",
+  "private": true,
+  "type": "module",
+  "main": "./index.js"
+}

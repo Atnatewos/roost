@@ -1,0 +1,12 @@
+{
+  "buildCommand": "turbo run build",
+  "devCommand": "turbo run dev",
+  "installCommand": "pnpm install",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/apps/api/src/index.js"
+    }
+  ]
+}
