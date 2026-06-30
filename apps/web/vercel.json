@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://roost-api.vercel.app/api/$1"
+    }
+  ]
+}
