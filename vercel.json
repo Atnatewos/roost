@@ -1,7 +1,7 @@
 {
-  "buildCommand": "turbo run build",
-  "devCommand": "turbo run dev",
-  "installCommand": "pnpm install",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
