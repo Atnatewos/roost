@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint"
+    "dev": "cd apps/web && npx vite",
+    "build": "cd apps/web && npx vite build",
+    "api": "cd apps/api && node src/index.js"
   }
 }
