@@ -1,19 +1,28 @@
 // apps/api/src/config/database.js
 
-import { PrismaClient } from '@prisma/client';
-
 /**
- * Prisma database client singleton.
- * Creates a single instance and reuses it across the application
- * to prevent connection pool exhaustion.
+ * @file config/database.js
+ * @description Prisma client configuration with connection pooling for Neon
+ * Prevents connection exhaustion on Vercel serverless
  */
+
+import { PrismaClient } from '@prisma/client';
+import config from './index.js';
+
 const globalForPrisma = globalThis;
 
-const prisma = globalForPrisma.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-});
+const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: config.nodeEnv === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    datasources: {
+      db: {
+        url: config.databaseUrl,
+      },
+    },
+  });
 
-if (process.env.NODE_ENV !== 'production') {
+if (config.nodeEnv !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 

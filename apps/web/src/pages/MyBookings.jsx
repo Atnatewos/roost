@@ -1,7 +1,13 @@
 // apps/web/src/pages/MyBookings.jsx
 
+/**
+ * @file pages/MyBookings.jsx
+ * @description Displays all bookings for the authenticated user.
+ * Fixed: Replaced window.location.href with useNavigate for SPA routing.
+ */
+
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchMyBookings } from '../services/bookings';
 import { formatDate, formatPrice } from '../utils/format';
 import { listingConfig } from '@roost/config';
@@ -10,13 +16,6 @@ import Skeleton from '../components/ui/Skeleton';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
 import Button from '../components/ui/Button';
-
-/**
- * My Bookings Page.
- * Displays all bookings for the authenticated user.
- * Guests see their bookings, hosts see bookings for their listings.
- * Shows booking status with custom badges - never uses browser defaults.
- */
 
 // Status badge mapping using our custom Badge component
 const STATUS_MAP = {
@@ -30,18 +29,14 @@ const STATUS_MAP = {
 
 const MyBookings = () => {
   const { user } = useAuth();
+  const navigate = useNavigate(); // Added for SPA navigation
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  /**
-   * Fetch bookings from the API.
-   * Handles loading, error, and empty states gracefully.
-   */
   const loadBookings = async () => {
     setLoading(true);
     setError(null);
-
     try {
       const response = await fetchMyBookings({ limit: 50 });
 
@@ -60,18 +55,14 @@ const MyBookings = () => {
   }, []);
 
   return (
-    <div className="container" style={{ paddingTop: 'var(--space-8)', paddingBottom: 'var(--space-8)' }}>
-      <h1 style={{
-        fontSize: 'var(--font-size-3xl)',
-        fontWeight: 'var(--font-weight-bold)',
-        marginBottom: 'var(--space-8)',
-      }}>
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold text-gray-900 mb-8">
         My Bookings
       </h1>
 
       {/* Loading state */}
       {loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div className="flex flex-col gap-4">
           {Array.from({ length: 3 }, (_, i) => (
             <Skeleton key={i} variant="card" />
           ))}
@@ -91,16 +82,19 @@ const MyBookings = () => {
       {/* Empty state */}
       {!loading && !error && bookings.length === 0 && (
         <EmptyState
-          icon="📋"
+          icon=""
           title="No bookings yet"
           description="When you book a space, it will appear here. Start exploring our listings!"
-          action={{ label: 'Browse Spaces', onClick: () => window.location.href = '/search' }}
+          action={{ 
+            label: 'Browse Spaces', 
+            onClick: () => navigate('/search') // Fixed: SPA navigation instead of full reload
+          }}
         />
       )}
 
       {/* Bookings list */}
       {!loading && !error && bookings.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div className="flex flex-col gap-4">
           {bookings.map((booking) => {
             const statusInfo = STATUS_MAP[booking.status] || { label: booking.status, variant: 'default' };
             const primaryImage = booking.listing?.images?.[0]?.url || '/images/placeholder.jpg';
@@ -109,56 +103,27 @@ const MyBookings = () => {
               <Link
                 key={booking.id}
                 to={`/bookings/${booking.id}`}
-                style={{
-                  display: 'flex',
-                  gap: 'var(--space-4)',
-                  padding: 'var(--space-4)',
-                  border: '1px solid var(--color-gray-200)',
-                  borderRadius: 'var(--radius-lg)',
-                  textDecoration: 'none',
-                  color: 'inherit',
-                  transition: 'box-shadow var(--transition-fast)',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.boxShadow = 'var(--shadow-md)'}
-                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                className="flex gap-4 p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
               >
                 {/* Thumbnail */}
                 <img
                   src={primaryImage}
                   alt={booking.listing?.title}
-                  style={{
-                    width: '120px',
-                    height: '100px',
-                    objectFit: 'cover',
-                    borderRadius: 'var(--radius-md)',
-                    flexShrink: 0,
-                  }}
+                  className="w-32 h-24 object-cover rounded-md flex-shrink-0"
                 />
 
                 {/* Booking details */}
-                <div style={{ flex: 1 }}>
-                  <h3 style={{
-                    fontSize: 'var(--font-size-lg)',
-                    fontWeight: 'var(--font-weight-semibold)',
-                    marginBottom: 'var(--space-1)',
-                  }}>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">
                     {booking.listing?.title || 'Listing'}
                   </h3>
-                  <p style={{
-                    fontSize: 'var(--font-size-sm)',
-                    color: 'var(--color-gray-600)',
-                    marginBottom: 'var(--space-2)',
-                  }}>
+                  <p className="text-sm text-gray-600 mb-2">
                     {formatDate(booking.checkIn)} → {formatDate(booking.checkOut)}
                     {' · '}{booking.guestCount} {booking.guestCount === 1 ? 'guest' : 'guests'}
                   </p>
-                  <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                  <div className="flex gap-3 items-center">
                     <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                    <span style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontWeight: 'var(--font-weight-semibold)',
-                      color: 'var(--color-primary)',
-                    }}>
+                    <span className="text-sm font-semibold text-blue-600">
                       {formatPrice(booking.totalPrice)}
                     </span>
                   </div>

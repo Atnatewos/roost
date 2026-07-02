@@ -1,92 +1,106 @@
 // apps/api/src/app.js
 
-import express from 'express';
-import cors from 'cors';
-import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
-import errorHandler from './middleware/errorHandler.js';
-import AppError from './utils/AppError.js';
-
 /**
- * Express application setup.
- * Middleware chain and route mounting configured here.
- * All configuration values sourced from environment variables.
+ * @file app.js
+ * @description Main Express application setup with security hardening,
+ * serverless-compatible rate limiting, and CORS configuration.
  */
 
-// Import all route modules
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit, { MemoryStore } from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import { createClient } from 'redis';
+import { prisma, cloudinary } from './config/index.js';
 import authRoutes from './routes/auth.js';
 import listingRoutes from './routes/listings.js';
 import bookingRoutes from './routes/bookings.js';
 import paymentRoutes from './routes/payments.js';
 import adminRoutes from './routes/admin.js';
+import errorHandler from './middleware/errorHandler.js';
 
 const app = express();
 
-// ─── Security Middleware ───
+// Security Headers
+app.use(helmet());
 
-// CORS - Restrict origins in production
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173'];
+// CORS Configuration - Must allow credentials for HttpOnly cookies
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const allowedOrigins = process.env.ALLOWED_ORIGINS 
+        ? process.env.ALLOWED_ORIGINS.split(',') 
+        : ['http://localhost:5173'];
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-}));
+// Body & Cookie Parsers
+const maxUploadSize = parseInt(process.env.MAX_UPLOAD_SIZE, 10) || 20971520;
+app.use(express.json({ limit: maxUploadSize }));
+app.use(express.urlencoded({ extended: true, limit: maxUploadSize }));
+app.use(cookieParser());
 
-// Rate limiting - configurable via environment variables
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
-  message: {
-    success: false,
-    message: 'Too many requests. Please try again later.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api', limiter);
+// Serverless-Compatible Rate Limiting
+let rateLimitStore;
+let redisClient;
 
-// ─── Body Parsing ───
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+if (process.env.NODE_ENV === 'production') {
+  redisClient = createClient({
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+  });
 
-// ─── Logging ───
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
+  redisClient.on('error', (err) => console.error('Redis Client Error:', err));
+  redisClient.connect().catch(console.error);
+
+  rateLimitStore = new RedisStore({
+    sendCommand: (...args) => redisClient.sendCommand(args),
+  });
+} else {
+  rateLimitStore = new MemoryStore();
 }
 
-// ─── Health Check ───
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'ROOST API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-  });
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: rateLimitStore,
+  message: {
+    success: false,
+    message: 'Too many requests from this IP, please try again later.',
+  },
 });
 
-// ─── API Routes ───
+app.use(limiter);
+
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 
-// ─── 404 Handler ───
-// Fixed: Use app.use instead of app.all('*') to avoid path-to-regexp v8 issues
-app.use((req, res, next) => {
-  next(new AppError(`Cannot find ${req.originalUrl} on this server.`, 404));
+// Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString() 
+  });
 });
 
-// ─── Global Error Handler (Must be last) ───
+// Global Error Handler (MUST be last)
 app.use(errorHandler);
 
 export default app;

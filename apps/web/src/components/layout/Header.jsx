@@ -1,172 +1,173 @@
 // apps/web/src/components/layout/Header.jsx
 
+/**
+ * @file components/layout/Header.jsx
+ * @description Navigation header with authentication-aware links.
+ * Uses the project's custom CSS variable design system and BEM naming conventions
+ * to ensure perfect styling without relying on external utility frameworks.
+ */
+
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import useAuth from '../../hooks/useAuth';
-import { logoutUser } from '../../services/auth';
-import { appConfig } from '@roost/config';
+import { useAuth } from '../../contexts/AuthContext';
 import Button from '../ui/Button';
-import cn from '../../utils/cn';
 
-/**
- * ROOST main navigation header.
- * Responsive: shows hamburger menu on mobile, full nav on desktop.
- * Adapts links based on user authentication and role.
- * Never uses browser-default navigation elements.
- */
 const Header = () => {
-  const { user, isAuth, isHost, isAdmin } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  /**
-   * Handle user logout.
-   * Clears auth state and redirects to home.
-   */
-  const handleLogout = () => {
-    setMobileMenuOpen(false);
-    logoutUser();
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
+  // Design system styles using project CSS variables
+  const styles = {
+    header: {
+      backgroundColor: 'var(--color-white, #ffffff)',
+      borderBottom: '1px solid var(--color-gray-200, #e5e7eb)',
+      boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05))',
+      position: 'sticky',
+      top: 0,
+      zIndex: 1000,
+      width: '100%',
+    },
+    container: {
+      maxWidth: '1200px',
+      margin: '0 auto',
+      padding: 'var(--space-4, 1rem) var(--space-6, 1.5rem)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    logo: {
+      fontSize: 'var(--font-size-xl, 1.5rem)',
+      fontWeight: 'var(--font-weight-bold, 700)',
+      color: 'var(--color-primary, #2563eb)',
+      textDecoration: 'none',
+      letterSpacing: '-0.02em',
+    },
+    nav: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 'var(--space-6, 1.5rem)',
+    },
+    link: {
+      fontSize: 'var(--font-size-md, 1rem)',
+      fontWeight: 'var(--font-weight-medium, 500)',
+      color: 'var(--color-gray-700, #374151)',
+      textDecoration: 'none',
+      transition: 'color var(--transition-fast, 0.2s)',
+    },
+    mobileToggle: {
+      display: 'none',
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      padding: 'var(--space-2, 0.5rem)',
+      color: 'var(--color-gray-700, #374151)',
+    },
+    mobileMenu: {
+      padding: 'var(--space-4, 1rem)',
+      borderTop: '1px solid var(--color-gray-200, #e5e7eb)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 'var(--space-4, 1rem)',
+      backgroundColor: 'var(--color-white, #ffffff)',
+    },
+    divider: {
+      color: 'var(--color-gray-300, #d1d5db)',
+      margin: '0 var(--space-2, 0.5rem)',
+    },
+    userInfo: {
+      fontSize: 'var(--font-size-sm, 0.875rem)',
+      color: 'var(--color-gray-600, #4b5563)',
+      fontWeight: 'var(--font-weight-medium, 500)',
+    }
   };
 
   return (
-    <header className="header">
-      <div className="container header__inner">
-        {/* Logo - Links to home */}
-        <Link to="/" className="header__logo" onClick={() => setMobileMenuOpen(false)}>
-          <span className="header__logo-text">{appConfig.brand.name}</span>
+    <header className="header" style={styles.header}>
+      <div className="header__container" style={styles.container}>
+        <Link to="/" className="header__logo" style={styles.logo}>
+          ROOST
         </Link>
 
-        {/* Desktop navigation */}
-        <nav className="header__nav" aria-label="Main navigation">
-          <Link to="/search" className="header__nav-link">
-            Browse Spaces
-          </Link>
-
-          {isHost && (
-            <Link to="/host/dashboard" className="header__nav-link">
-              Host Dashboard
-            </Link>
-          )}
-
-          {isAdmin && (
-            <Link to="/admin" className="header__nav-link">
-              Admin
-            </Link>
+        <nav className="header__nav" style={styles.nav}>
+          <Link to="/search" style={styles.link}>Search</Link>
+          
+          {isAuthenticated ? (
+            <>
+              <Link to="/my-bookings" style={styles.link}>My Bookings</Link>
+              {user?.role === 'HOST' && (
+                <>
+                  <Link to="/create-listing" style={styles.link}>Create Listing</Link>
+                  <Link to="/host/dashboard" style={styles.link}>Dashboard</Link>
+                </>
+              )}
+              {user?.role === 'ADMIN' && (
+                <Link to="/admin/dashboard" style={styles.link}>Admin</Link>
+              )}
+              
+              <span style={styles.divider}>|</span>
+              <span style={styles.userInfo}>
+                {user?.fullName || user?.email}
+              </span>
+              <Button variant="secondary" size="sm" onClick={handleLogout}>
+                Logout
+              </Button>
+            </>
+          ) : (
+            <>
+              <Link to="/login" style={styles.link}>Login</Link>
+              <Button variant="primary" size="sm" onClick={() => navigate('/register')}>
+                Sign Up
+              </Button>
+            </>
           )}
         </nav>
 
-        {/* Desktop auth buttons */}
-        <div className="header__actions">
-          {isAuth ? (
-            <>
-              <Link to="/bookings" className="header__nav-link">
-                My Bookings
-              </Link>
-              <div className="header__user-menu">
-                <button className="header__user-btn" aria-label="User menu">
-                  <span className="header__user-avatar">
-                    {user?.fullName?.charAt(0)?.toUpperCase() || '?'}
-                  </span>
-                </button>
-                <div className="header__dropdown">
-                  <span className="header__dropdown-name">{user?.fullName}</span>
-                  <span className="header__dropdown-email">{user?.email}</span>
-                  <hr className="header__dropdown-divider" />
-                  <button
-                    onClick={handleLogout}
-                    className="header__dropdown-item header__dropdown-item--danger"
-                  >
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="header__auth-buttons">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate('/login')}
-              >
-                Sign In
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => navigate('/register')}
-              >
-                Sign Up
-              </Button>
-            </div>
-          )}
-
-          {/* Mobile menu toggle */}
-          <button
-            className="header__hamburger"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-            aria-expanded={mobileMenuOpen}
-          >
-            <span className={cn('header__hamburger-line', mobileMenuOpen && 'header__hamburger-line--open')} />
-            <span className={cn('header__hamburger-line', mobileMenuOpen && 'header__hamburger-line--open')} />
-            <span className={cn('header__hamburger-line', mobileMenuOpen && 'header__hamburger-line--open')} />
-          </button>
-        </div>
+        <button 
+          className="header__mobile-toggle" 
+          style={styles.mobileToggle}
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          aria-label="Toggle menu"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            {isMenuOpen ? (
+              <path d="M18 6L6 18M6 6l12 12" />
+            ) : (
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
       </div>
 
-      {/* Mobile navigation overlay */}
-      {mobileMenuOpen && (
-        <div className="header__mobile-menu">
-          <nav className="header__mobile-nav" aria-label="Mobile navigation">
-            <Link
-              to="/search"
-              className="header__mobile-link"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Browse Spaces
-            </Link>
-
-            {isAuth ? (
-              <>
-                <Link
-                  to="/bookings"
-                  className="header__mobile-link"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  My Bookings
-                </Link>
-                {isHost && (
-                  <Link
-                    to="/host/dashboard"
-                    className="header__mobile-link"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Host Dashboard
-                  </Link>
-                )}
-                <button onClick={handleLogout} className="header__mobile-link header__mobile-link--danger">
-                  Sign Out
-                </button>
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="header__mobile-link"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Sign In
-                </Link>
-                <Link
-                  to="/register"
-                  className="header__mobile-link"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Sign Up
-                </Link>
-              </>
-            )}
-          </nav>
+      {isMenuOpen && (
+        <div className="header__mobile-menu" style={styles.mobileMenu}>
+          <Link to="/search" style={styles.link} onClick={() => setIsMenuOpen(false)}>Search</Link>
+          {isAuthenticated ? (
+            <>
+              <Link to="/my-bookings" style={styles.link} onClick={() => setIsMenuOpen(false)}>My Bookings</Link>
+              {user?.role === 'HOST' && (
+                <>
+                  <Link to="/create-listing" style={styles.link} onClick={() => setIsMenuOpen(false)}>Create Listing</Link>
+                  <Link to="/host/dashboard" style={styles.link} onClick={() => setIsMenuOpen(false)}>Dashboard</Link>
+                </>
+              )}
+              <Button variant="secondary" fullWidth onClick={handleLogout}>Logout</Button>
+            </>
+          ) : (
+            <>
+              <Link to="/login" style={styles.link} onClick={() => setIsMenuOpen(false)}>Login</Link>
+              <Button variant="primary" fullWidth onClick={() => { navigate('/register'); setIsMenuOpen(false); }}>Sign Up</Button>
+            </>
+          )}
         </div>
       )}
     </header>

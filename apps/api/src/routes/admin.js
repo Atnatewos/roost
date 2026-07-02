@@ -1,29 +1,22 @@
 // apps/api/src/routes/admin.js
 
+/**
+ * @file routes/admin.js
+ * @description Administrative routes for platform management.
+ * All routes require authentication and ADMIN role.
+ */
+
 import { Router } from 'express';
-import {
-  verifyListing,
-  confirmPayment,
-  getDashboardStats,
-  getUsers,
-} from '../controllers/admin.js';
+import { getAllListings, updateListingStatus } from '../controllers/admin.js';
 import authenticate from '../middleware/auth.js';
 import authorize from '../middleware/roleCheck.js';
 
-/**
- * Admin routes.
- * All routes require ADMIN role authorization.
- */
-
 const router = Router();
 
-// All admin routes require authentication AND admin role
-router.use(authenticate);
-router.use(authorize('ADMIN'));
+// Apply authentication and ADMIN role check to all admin routes
+router.use(authenticate, authorize('ADMIN'));
 
-router.get('/stats', getDashboardStats);
-router.get('/users', getUsers);
-router.patch('/listings/:listingId/verify', verifyListing);
-router.patch('/payments/:bookingId/confirm', confirmPayment);
+router.get('/listings', getAllListings);
+router.patch('/listings/:id/status', updateListingStatus);
 
 export default router;

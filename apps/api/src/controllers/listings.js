@@ -1,5 +1,11 @@
 // apps/api/src/controllers/listings.js
 
+/**
+ * @file controllers/listings.js
+ * @description Listing management controllers.
+ * Handles creation, retrieval, updates, deletion, and image uploads.
+ */
+
 import { prisma, cloudinary } from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
@@ -7,32 +13,24 @@ import ApiResponse from '../utils/ApiResponse.js';
 
 /**
  * Generate a URL-friendly slug from a title string.
- * Handles Ethiopian characters by transliterating where possible.
- *
- * @param {string} title - The listing title
- * @returns {string} URL-safe slug
  */
 const generateSlug = (title) => {
   return title
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '')  // Remove special characters
-    .replace(/[\s_]+/g, '-')   // Replace spaces and underscores with hyphens
-    .replace(/-+/g, '-')       // Collapse multiple hyphens
-    .replace(/^-+|-+$/g, '');  // Trim hyphens from start and end
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
 };
 
 /**
  * Ensure a unique slug by appending a counter if necessary.
- *
- * @param {string} slug - Base slug to check
- * @param {string} excludeId - Listing ID to exclude (for updates)
- * @returns {string} Unique slug
  */
 const makeUniqueSlug = async (slug, excludeId = null) => {
   let uniqueSlug = slug;
   let counter = 1;
-
+  
   while (true) {
     const existing = await prisma.listing.findFirst({
       where: {
@@ -40,20 +38,18 @@ const makeUniqueSlug = async (slug, excludeId = null) => {
         ...(excludeId && { id: { not: excludeId } }),
       },
     });
-
+    
     if (!existing) break;
-
+    
     uniqueSlug = `${slug}-${counter}`;
     counter++;
   }
-
+  
   return uniqueSlug;
 };
 
 /**
  * Create a new listing.
- * Only users with HOST role can create listings.
- * The host is automatically set to the authenticated user.
  */
 export const createListing = catchAsync(async (req, res) => {
   const {
@@ -62,11 +58,10 @@ export const createListing = catchAsync(async (req, res) => {
     bedrooms, bathrooms, maxGuests, basePrice,
     cleaningFee, weeklyDiscount, monthlyDiscount, amenities,
   } = req.body;
-
-  // Generate a unique slug from the title
+  
   const baseSlug = generateSlug(title);
   const slug = await makeUniqueSlug(baseSlug);
-
+  
   const listing = await prisma.listing.create({
     data: {
       hostId: req.user.id,
@@ -92,7 +87,7 @@ export const createListing = catchAsync(async (req, res) => {
       status: 'PENDING',
     },
   });
-
+  
   res.status(201).json(
     ApiResponse.success(
       { listing },
@@ -104,8 +99,6 @@ export const createListing = catchAsync(async (req, res) => {
 
 /**
  * Get all active listings with filtering and pagination.
- * Public endpoint - no authentication required.
- * Supports filtering by city, property type, price range, and amenities.
  */
 export const getListings = catchAsync(async (req, res) => {
   const {
@@ -118,35 +111,34 @@ export const getListings = catchAsync(async (req, res) => {
     amenities,
     search,
   } = req.query;
-
+  
   const pageNum = parseInt(page, 10);
-  const limitNum = Math.min(parseInt(limit, 10), 50); // Cap at 50 per page
+  const limitNum = Math.min(parseInt(limit, 10), 50);
   const skip = (pageNum - 1) * limitNum;
-
-  // Build dynamic where clause based on provided filters
+  
   const where = {
     status: 'ACTIVE',
   };
-
+  
   if (city) {
     where.city = { contains: city, mode: 'insensitive' };
   }
-
+  
   if (propertyType) {
     where.propertyType = propertyType;
   }
-
+  
   if (minPrice || maxPrice) {
     where.basePrice = {};
     if (minPrice) where.basePrice.gte = parseFloat(minPrice);
     if (maxPrice) where.basePrice.lte = parseFloat(maxPrice);
   }
-
+  
   if (amenities) {
     const amenityList = amenities.split(',').map(a => a.trim());
     where.amenities = { hasEvery: amenityList };
   }
-
+  
   if (search) {
     where.OR = [
       { title: { contains: search, mode: 'insensitive' } },
@@ -155,8 +147,7 @@ export const getListings = catchAsync(async (req, res) => {
       { address: { contains: search, mode: 'insensitive' } },
     ];
   }
-
-  // Execute count and find in parallel for efficiency
+  
   const [listings, total] = await Promise.all([
     prisma.listing.findMany({
       where,
@@ -176,20 +167,42 @@ export const getListings = catchAsync(async (req, res) => {
     }),
     prisma.listing.count({ where }),
   ]);
-
+  
   res.json(
     ApiResponse.paginated(listings, pageNum, limitNum, total)
   );
 });
 
 /**
+ * Get all listings for the authenticated host.
+ */
+export const getHostListings = catchAsync(async (req, res) => {
+  const listings = await prisma.listing.findMany({
+    where: { hostId: req.user.id },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      images: {
+        where: { isPrimary: true },
+        take: 1,
+        select: { url: true },
+      },
+      _count: {
+        select: { bookings: true },
+      },
+    },
+  });
+  
+  res.json(
+    ApiResponse.success({ listings }, 'Host listings retrieved successfully.')
+  );
+});
+
+/**
  * Get a single listing by its slug.
- * Includes host details and all images.
- * Public endpoint - no authentication required.
  */
 export const getListing = catchAsync(async (req, res) => {
   const { slug } = req.params;
-
+  
   const listing = await prisma.listing.findUnique({
     where: { slug },
     include: {
@@ -216,11 +229,11 @@ export const getListing = catchAsync(async (req, res) => {
       },
     },
   });
-
+  
   if (!listing) {
     throw new AppError('Listing not found.', 404);
   }
-
+  
   res.json(
     ApiResponse.success({ listing }, 'Listing retrieved successfully.')
   );
@@ -228,29 +241,25 @@ export const getListing = catchAsync(async (req, res) => {
 
 /**
  * Upload images for a listing.
- * Images are uploaded to Cloudinary and stored with their public IDs
- * for future deletion management.
  */
 export const uploadListingImages = catchAsync(async (req, res) => {
   const { listingId } = req.params;
-
-  // Verify the listing exists and belongs to the authenticated host
+  
   const listing = await prisma.listing.findFirst({
     where: {
       id: listingId,
       hostId: req.user.id,
     },
   });
-
+  
   if (!listing) {
     throw new AppError('Listing not found or you do not have permission.', 404);
   }
-
+  
   if (!req.files || req.files.length === 0) {
     throw new AppError('No images provided for upload.', 400);
   }
-
-  // Upload each image to Cloudinary and collect the results
+  
   const uploadPromises = req.files.map((file, index) => {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -268,14 +277,13 @@ export const uploadListingImages = catchAsync(async (req, res) => {
       uploadStream.end(file.buffer);
     });
   });
-
+  
   const uploadedImages = await Promise.all(uploadPromises);
-
-  // Set the first uploaded image as primary if no primary exists
+  
   const existingImages = await prisma.listingImage.count({
     where: { listingId },
   });
-
+  
   const imageData = uploadedImages.map((img, index) => ({
     listingId,
     url: img.url,
@@ -283,14 +291,14 @@ export const uploadListingImages = catchAsync(async (req, res) => {
     order: existingImages + index,
     isPrimary: existingImages === 0 && index === 0,
   }));
-
+  
   await prisma.listingImage.createMany({ data: imageData });
-
+  
   const allImages = await prisma.listingImage.findMany({
     where: { listingId },
     orderBy: { order: 'asc' },
   });
-
+  
   res.status(201).json(
     ApiResponse.success(
       { images: allImages },
@@ -302,28 +310,26 @@ export const uploadListingImages = catchAsync(async (req, res) => {
 
 /**
  * Update an existing listing.
- * Only the listing's host can update it.
  */
 export const updateListing = catchAsync(async (req, res) => {
   const { id } = req.params;
-
+  
   const listing = await prisma.listing.findFirst({
     where: { id, hostId: req.user.id },
   });
-
+  
   if (!listing) {
     throw new AppError('Listing not found or you do not have permission.', 404);
   }
-
+  
   const allowedFields = [
     'title', 'description', 'propertyType', 'placeType',
     'address', 'city', 'subcity', 'kebele', 'latitude', 'longitude',
     'bedrooms', 'bathrooms', 'maxGuests', 'basePrice',
     'cleaningFee', 'weeklyDiscount', 'monthlyDiscount', 'amenities',
   ];
-
+  
   const updates = {};
-
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {
       updates[field] = typeof req.body[field] === 'string'
@@ -331,13 +337,12 @@ export const updateListing = catchAsync(async (req, res) => {
         : req.body[field];
     }
   }
-
-  // Regenerate slug if title changed
+  
   if (updates.title) {
     const baseSlug = generateSlug(updates.title);
     updates.slug = await makeUniqueSlug(baseSlug, id);
   }
-
+  
   const updatedListing = await prisma.listing.update({
     where: { id },
     data: updates,
@@ -345,7 +350,7 @@ export const updateListing = catchAsync(async (req, res) => {
       images: { orderBy: { order: 'asc' } },
     },
   });
-
+  
   res.json(
     ApiResponse.success(
       { listing: updatedListing },
@@ -356,30 +361,26 @@ export const updateListing = catchAsync(async (req, res) => {
 
 /**
  * Delete a listing.
- * Only the listing's host can delete it.
- * Also removes all associated Cloudinary images.
  */
 export const deleteListing = catchAsync(async (req, res) => {
   const { id } = req.params;
-
+  
   const listing = await prisma.listing.findFirst({
     where: { id, hostId: req.user.id },
     include: { images: true },
   });
-
+  
   if (!listing) {
     throw new AppError('Listing not found or you do not have permission.', 404);
   }
-
-  // Delete all images from Cloudinary
+  
   if (listing.images.length > 0) {
     const publicIds = listing.images.map(img => img.publicId);
     await cloudinary.api.delete_resources(publicIds);
   }
-
-  // Delete the listing (cascades to images in database)
+  
   await prisma.listing.delete({ where: { id } });
-
+  
   res.json(
     ApiResponse.success(null, 'Listing deleted successfully.')
   );

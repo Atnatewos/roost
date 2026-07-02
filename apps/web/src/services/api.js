@@ -1,102 +1,50 @@
 // apps/web/src/services/api.js
 
-import axios from 'axios';
-import { appConfig } from '@roost/config';
-
 /**
- * Axios HTTP Client Configuration
- * 
- * Base URL is automatically detected from the current environment
- * via the shared config package. No hardcoded URLs anywhere.
- * 
- * - Production: https://rooststay.vercel.app/api (auto-detected)
- * - Development: http://localhost:5000/api (via Vite proxy)
- * 
- * Security:
- * - JWT token is attached to every request from sessionStorage
- * - 401 responses trigger automatic session cleanup
- * - Network errors are caught and surfaced to the user
+ * @file services/api.js
+ * @description Axios instance with cookie support for HttpOnly authentication.
+ * Includes smart redirect logic to prevent infinite loops and console spam.
  */
 
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
 const api = axios.create({
-  baseURL: appConfig.api.baseUrl,
-  timeout: appConfig.api.timeout,
+  baseURL: API_BASE_URL,
+  withCredentials: true, // CRITICAL: Allows cookies to be sent with requests
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-/**
- * Request Interceptor
- * 
- * Attaches the JWT authentication token to every outgoing request.
- * The token is read from sessionStorage, which is scoped to the
- * current browser tab. This means different tabs can have different
- * authenticated users without conflict.
- */
-api.interceptors.request.use(
-  (config) => {
-    let token = null;
-    
-    try {
-      token = sessionStorage.getItem('roost_token');
-    } catch {
-      // sessionStorage unavailable - request proceeds without auth
-    }
+let redirectCount = 0;
+const MAX_REDIRECTS = 2;
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-/**
- * Response Interceptor
- * 
- * Handles common API response scenarios:
- * - Successful responses pass through to the calling code
- * - 401 Unauthorized clears the session and redirects to login
- * - Network errors surface a user-friendly message
- * 
- * Session cleanup on 401 is scoped to the current tab only.
- * Other tabs with different sessions are unaffected.
- */
 api.interceptors.response.use(
   (response) => {
-    return response.data;
+    redirectCount = 0;
+    return response;
   },
   (error) => {
-    // Network error - server unreachable
-    if (!error.response) {
-      console.error('Network error: Unable to reach the server.');
-      return Promise.reject({
-        success: false,
-        message: 'Network error. Please check your internet connection.',
-      });
-    }
-
-    // Authentication error - token expired or invalid
-    if (error.response.status === 401) {
-      try {
-        sessionStorage.removeItem('roost_token');
-        sessionStorage.removeItem('roost_user');
-      } catch {
-        // Cleanup failed - redirect anyway
+    if (error.response?.status === 401) {
+      // CRITICAL FIX: Ignore 401s from the initial auth check (/auth/me).
+      // This prevents console spam and unnecessary redirects for unauthenticated users.
+      if (error.config.url.includes('/auth/me')) {
+        return Promise.reject(error);
       }
 
-      // Only redirect if not already on the login page
-      if (window.location.pathname !== '/login') {
+      const currentPath = window.location.pathname;
+      const isAlreadyOnAuthPage = currentPath === '/login' || currentPath === '/register';
+      
+      if (!isAlreadyOnAuthPage && redirectCount < MAX_REDIRECTS) {
+        redirectCount++;
         window.location.href = '/login';
+      } else if (redirectCount >= MAX_REDIRECTS) {
+        redirectCount = 0;
       }
     }
-
-    // Pass the error through for component-level handling
-    return Promise.reject(error.response.data);
+    return Promise.reject(error);
   }
 );
 

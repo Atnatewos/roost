@@ -6,8 +6,13 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "cd apps/web && npx vite",
+    "dev": "concurrently -n API,WEB -c blue,magenta \"cd apps/api && npm run dev\" \"cd apps/web && npm run dev\"",
+    "dev:api": "cd apps/api && npm run dev",
+    "dev:web": "cd apps/web && npm run dev",
     "build": "cd apps/web && npx vite build",
     "api": "cd apps/api && node src/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
   }
 }

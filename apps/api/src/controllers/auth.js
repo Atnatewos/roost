@@ -1,5 +1,11 @@
 // apps/api/src/controllers/auth.js
 
+/**
+ * @file controllers/auth.js
+ * @description Handles user authentication, profile management, and role upgrades.
+ * Implements HttpOnly cookies for secure JWT storage to prevent XSS token theft.
+ */
+
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma, jwtConfig } from '../config/index.js';
@@ -8,12 +14,7 @@ import catchAsync from '../utils/catchAsync.js';
 import ApiResponse from '../utils/ApiResponse.js';
 
 /**
- * Generate a JWT token for authenticated users.
- * The token payload contains the minimum necessary user data
- * required for authorization checks in middleware.
- *
- * @param {Object} user - User record from the database
- * @returns {string} Signed JWT token
+ * Generate a JWT token for authenticated users
  */
 const generateToken = (user) => {
   const payload = {
@@ -30,11 +31,33 @@ const generateToken = (user) => {
 };
 
 /**
- * Sanitize user object before sending to client.
- * Removes sensitive fields that should never leave the server.
- *
- * @param {Object} user - Raw user record from database
- * @returns {Object} Sanitized user object safe for client consumption
+ * Set JWT in HttpOnly cookie
+ */
+const sendTokenResponse = (user, statusCode, res) => {
+  const token = generateToken(user);
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  };
+
+  res
+    .status(statusCode)
+    .cookie('roost_token', token, cookieOptions)
+    .json(
+      ApiResponse.success(
+        {
+          user: sanitizeUser(user),
+        },
+        'Authentication successful'
+      )
+    );
+};
+
+/**
+ * Sanitize user object before sending to client
  */
 const sanitizeUser = (user) => {
   const { password, ...userWithoutPassword } = user;
@@ -42,14 +65,11 @@ const sanitizeUser = (user) => {
 };
 
 /**
- * Register a new user account.
- * Validates unique email/phone, hashes password with bcrypt,
- * and returns a JWT token for immediate authentication.
+ * Register a new user account
  */
 export const register = catchAsync(async (req, res) => {
   const { email, phone, password, fullName } = req.body;
 
-  // Check for existing user with same email or phone
   const existingUser = await prisma.user.findFirst({
     where: {
       OR: [
@@ -64,11 +84,9 @@ export const register = catchAsync(async (req, res) => {
     throw new AppError(`An account with this ${field} already exists.`, 409);
   }
 
-  // Hash password with a randomly generated salt (12 rounds)
   const salt = await bcrypt.genSalt(12);
   const hashedPassword = await bcrypt.hash(password, salt);
 
-  // Create user with default GUEST role
   const user = await prisma.user.create({
     data: {
       email: email.toLowerCase().trim(),
@@ -79,64 +97,79 @@ export const register = catchAsync(async (req, res) => {
     },
   });
 
-  // Generate authentication token
-  const token = generateToken(user);
-
-  res.status(201).json(
-    ApiResponse.success(
-      {
-        user: sanitizeUser(user),
-        token,
-      },
-      'Account created successfully. Welcome to ROOST!',
-      201
-    )
-  );
+  sendTokenResponse(user, 201, res);
 });
 
 /**
- * Authenticate an existing user.
- * Verifies email and password, returns JWT token on success.
- * Uses timing-safe comparison to prevent timing attacks.
+ * Authenticate an existing user
  */
 export const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
 
-  // Find user by email (case-insensitive)
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
   });
 
-  // Use generic error message to prevent user enumeration
   if (!user) {
     throw new AppError('Invalid email or password.', 401);
   }
 
-  // Compare provided password with stored hash
   const isPasswordValid = await bcrypt.compare(password, user.password);
 
   if (!isPasswordValid) {
     throw new AppError('Invalid email or password.', 401);
   }
 
-  // Generate fresh token for this session
-  const token = generateToken(user);
-
-  res.json(
-    ApiResponse.success(
-      {
-        user: sanitizeUser(user),
-        token,
-      },
-      'Welcome back!'
-    )
-  );
+  sendTokenResponse(user, 200, res);
 });
 
 /**
- * Return the currently authenticated user's profile.
- * Requires valid JWT token in the Authorization header.
- * Used by the client to restore session state on page refresh.
+ * Check authentication status silently without throwing 401.
+ */
+export const getAuthStatus = catchAsync(async (req, res) => {
+  const token = req.cookies?.roost_token;
+
+  if (!token) {
+    return res.json(
+      ApiResponse.success({ loggedIn: false, user: null }, 'Not authenticated')
+    );
+  }
+
+  try {
+    const decoded = jwt.verify(token, jwtConfig.secret);
+    
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+        role: true,
+        avatar: true,
+        isVerified: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.json(
+        ApiResponse.success({ loggedIn: false, user: null }, 'User not found')
+      );
+    }
+
+    return res.json(
+      ApiResponse.success({ loggedIn: true, user }, 'Authenticated')
+    );
+  } catch (error) {
+    return res.json(
+      ApiResponse.success({ loggedIn: false, user: null }, 'Invalid token')
+    );
+  }
+});
+
+/**
+ * Return the currently authenticated user's profile
  */
 export const getCurrentUser = catchAsync(async (req, res) => {
   const user = await prisma.user.findUnique({
@@ -156,15 +189,12 @@ export const getCurrentUser = catchAsync(async (req, res) => {
 });
 
 /**
- * Update the authenticated user's profile.
- * Only allows updating non-sensitive fields.
- * Prevents role escalation and email changes without verification.
+ * Update the authenticated user's profile
  */
 export const updateProfile = catchAsync(async (req, res) => {
   const allowedFields = ['fullName', 'phone', 'avatar'];
   const updates = {};
 
-  // Filter request body to only allowed fields
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) {
       updates[field] = req.body[field].trim();
@@ -186,4 +216,50 @@ export const updateProfile = catchAsync(async (req, res) => {
       'Profile updated successfully.'
     )
   );
+});
+
+/**
+ * Upgrade an authenticated GUEST user to a HOST.
+ * Allows users to seamlessly transition to hosting properties.
+ */
+export const upgradeToHost = catchAsync(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+  });
+
+  if (!user) {
+    throw new AppError('User not found.', 404);
+  }
+
+  if (user.role === 'HOST' || user.role === 'ADMIN') {
+    throw new AppError('You are already a host.', 400);
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { role: 'HOST' },
+  });
+
+  res.json(
+    ApiResponse.success(
+      { user: sanitizeUser(updatedUser) },
+      'Successfully upgraded to Host.'
+    )
+  );
+});
+
+/**
+ * Logout - Clear authentication cookie
+ */
+export const logout = catchAsync(async (req, res) => {
+  res
+    .status(200)
+    .clearCookie('roost_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    })
+    .json(
+      ApiResponse.success(null, 'Logged out successfully')
+    );
 });

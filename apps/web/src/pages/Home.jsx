@@ -1,16 +1,18 @@
 // apps/web/src/pages/Home.jsx
 
+/**
+ * @file pages/Home.jsx
+ * @description ROOST Home Page.
+ * Landing page with hero search, property type categories,
+ * and call-to-action sections. First impression for new visitors.
+ */
+
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { listingConfig, appConfig } from '@roost/config';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 
-/**
- * ROOST Home Page.
- * Landing page with hero search, property type categories,
- * and call-to-action sections. First impression for new visitors.
- */
 const Home = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,8 +41,8 @@ const Home = () => {
             Discover unique homes, apartments, and traditional spaces across Ethiopia.
             Book securely with local payment methods.
           </p>
-
-          {/* Search form - never uses browser-default form styling */}
+          
+          {/* Search form */}
           <form className="home-hero__search" onSubmit={handleSearch}>
             <input
               type="text"
@@ -133,7 +135,7 @@ const Home = () => {
         <Button
           variant="primary"
           size="lg"
-          onClick={() => navigate('/register')}
+          onClick={() => navigate('/become-host')}
         >
           Become a Host
         </Button>

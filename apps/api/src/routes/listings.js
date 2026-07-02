@@ -1,10 +1,16 @@
 // apps/api/src/routes/listings.js
 
+/**
+ * @file routes/listings.js
+ * @description Listing routes with Multer-based image upload flow.
+ */
+
 import { Router } from 'express';
 import {
   createListing,
   getListings,
   getListing,
+  getHostListings,
   uploadListingImages,
   updateListing,
   deleteListing,
@@ -13,18 +19,13 @@ import authenticate from '../middleware/auth.js';
 import authorize from '../middleware/roleCheck.js';
 import { uploadMultiple } from '../middleware/upload.js';
 
-/**
- * Listing routes.
- * Public read access, authenticated write access for hosts.
- */
-
 const router = Router();
 
 // Public routes
 router.get('/', getListings);
-router.get('/:slug', getListing);
 
-// Host-only routes
+// Host-only routes (Must be before /:slug)
+router.get('/host/my-listings', authenticate, authorize('HOST', 'ADMIN'), getHostListings);
 router.post('/', authenticate, authorize('HOST', 'ADMIN'), createListing);
 router.patch('/:id', authenticate, authorize('HOST', 'ADMIN'), updateListing);
 router.delete('/:id', authenticate, authorize('HOST', 'ADMIN'), deleteListing);
@@ -37,5 +38,8 @@ router.post(
   uploadMultiple,
   uploadListingImages
 );
+
+// Public route (Must be after specific host routes)
+router.get('/:slug', getListing);
 
 export default router;

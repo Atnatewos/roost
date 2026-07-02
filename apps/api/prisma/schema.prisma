@@ -134,12 +134,12 @@ model Review {
   bookingId String   @unique
   booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   listingId String
-  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing   Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
+  author    User      @relation(fields: [authorId], references: [id])
   rating    Int
   content   String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@map("reviews")
 }

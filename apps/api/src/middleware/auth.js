@@ -1,41 +1,54 @@
 // apps/api/src/middleware/auth.js
 
+/**
+ * @file middleware/auth.js
+ * @description Authentication middleware that extracts JWT from HttpOnly cookies.
+ * Provides both default export (authenticate) and named export (protect) for flexibility.
+ */
+
 import jwt from 'jsonwebtoken';
-import { jwtConfig } from '../config/index.js';
+import { prisma, jwtConfig } from '../config/index.js';
 import AppError from '../utils/AppError.js';
+import catchAsync from '../utils/catchAsync.js';
 
 /**
- * Authentication middleware.
- * Verifies the JWT token from the Authorization header
- * and attaches the decoded user payload to the request object.
+ * Middleware to protect routes. Verifies JWT from HttpOnly cookie.
  */
-const authenticate = (req, res, next) => {
-  // Extract token from Authorization header
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(new AppError('Authentication required. Please log in.', 401));
+const authenticate = catchAsync(async (req, res, next) => {
+  let token;
+
+  // Extract token from HttpOnly cookie
+  if (req.cookies && req.cookies.roost_token) {
+    token = req.cookies.roost_token;
   }
 
-  const token = authHeader.split(' ')[1];
-
   if (!token) {
-    return next(new AppError('Authentication token is missing.', 401));
+    return next(new AppError('Not authorized to access this route', 401));
   }
 
   try {
     const decoded = jwt.verify(token, jwtConfig.secret);
-    req.user = decoded;
+
+    req.user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!req.user) {
+      return next(new AppError('User no longer exists', 401));
+    }
+
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return next(new AppError('Your session has expired. Please log in again.', 401));
-    }
-    if (error.name === 'JsonWebTokenError') {
-      return next(new AppError('Invalid authentication token.', 401));
-    }
-    return next(new AppError('Authentication failed.', 401));
+    return next(new AppError('Invalid or expired token', 401));
   }
-};
+});
 
 export default authenticate;
+export { authenticate as protect };

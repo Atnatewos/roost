@@ -1,147 +1,146 @@
 // apps/web/src/App.jsx
 
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
-import { AuthProvider } from './contexts/AuthContext';
+/**
+ * @file App.jsx
+ * @description Main application component with route protection
+ * Prevents infinite redirect loops by checking auth state properly
+ */
+
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './components/ui/Toast';
-import { appConfig } from '@roost/config';
-import ErrorBoundary from './components/ui/ErrorBoundary';
+
+// Import layouts
 import PublicLayout from './components/layout/PublicLayout';
-import Spinner from './components/ui/Spinner';
 
-/**
- * ROOST Application Root Component.
- * Wraps the entire app with providers (Auth, Toast, Router)
- * and configures lazy-loaded routes for optimal performance.
- * Code-splitting via React.lazy ensures each page is loaded
- * only when the user navigates to it.
- */
+// Import pages
+import Home from './pages/Home';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Search from './pages/Search';
+import ListingDetail from './pages/ListingDetail';
+import CreateListing from './pages/CreateListing';
+import BecomeHost from './pages/BecomeHost';
+import HostDashboard from './pages/HostDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import MyBookings from './pages/MyBookings';
+import NotFound from './pages/NotFound';
 
-// ─── Lazy-Loaded Page Components ───
-// Each page is a separate chunk loaded on demand
-const Home = lazy(() => import('./pages/Home'));
-const Search = lazy(() => import('./pages/Search'));
-const ListingDetail = lazy(() => import('./pages/ListingDetail'));
-const Login = lazy(() => import('./pages/Login'));
-const Register = lazy(() => import('./pages/Register'));
-const MyBookings = lazy(() => import('./pages/MyBookings'));
-const HostDashboard = lazy(() => import('./pages/HostDashboard'));
-const CreateListing = lazy(() => import('./pages/CreateListing'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const NotFound = lazy(() => import('./pages/NotFound'));
+const ProtectedRoute = ({ children, requiredRole }) => {
+  const { user, loading, isAuthenticated } = useAuth();
 
-/**
- * Full-page loading fallback displayed while lazy-loaded pages are fetched.
- * Uses our custom Spinner component - never shows browser-default loading.
- */
-const PageLoader = () => (
-  <div style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '60vh',
-  }}>
-    <Spinner size="lg" color="primary" label="Loading page..." />
-  </div>
-);
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div style={{ width: '3rem', height: '3rem', borderRadius: '50%', border: '2px solid var(--color-gray-200)', borderTopColor: 'var(--color-primary)', animation: 'spin 1s linear infinite' }}></div>
+      </div>
+    );
+  }
 
-/**
- * Protected route wrapper.
- * Redirects to login if user is not authenticated.
- * Checks for stored token before making the redirect decision.
- */
-const ProtectedRoute = ({ children, requiredRole = null }) => {
-  const token = localStorage.getItem('roost_token');
-
-  if (!token) {
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // If a specific role is required, verify from stored user data
-  if (requiredRole) {
-    try {
-      const user = JSON.parse(localStorage.getItem('roost_user') || '{}');
-      if (user.role !== requiredRole && user.role !== 'ADMIN') {
-        return <Navigate to="/" replace />;
-      }
-    } catch {
-      return <Navigate to="/login" replace />;
-    }
+  if (requiredRole && user.role !== requiredRole && user.role !== 'ADMIN') {
+    return <Navigate to="/" replace />;
   }
 
   return children;
 };
 
-/**
- * App Component
- * Provider hierarchy: ErrorBoundary > Router > Auth > Toast > Routes
- */
+const PublicOnlyRoute = ({ children }) => {
+  const { loading, isAuthenticated } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div style={{ width: '3rem', height: '3rem', borderRadius: '50%', border: '2px solid var(--color-gray-200)', borderTopColor: 'var(--color-primary)', animation: 'spin 1s linear infinite' }}></div>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+const AppRoutes = () => {
+  return (
+    <Routes>
+      <Route element={<PublicLayout />}>
+        <Route path="/" element={<Home />} />
+        <Route path="/search" element={<Search />} />
+        <Route path="/listings/:slug" element={<ListingDetail />} />
+        <Route path="/become-host" element={<BecomeHost />} />
+        
+        <Route
+          path="/login"
+          element={
+            <PublicOnlyRoute>
+              <Login />
+            </PublicOnlyRoute>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <PublicOnlyRoute>
+              <Register />
+            </PublicOnlyRoute>
+          }
+        />
+        
+        <Route
+          path="/create-listing"
+          element={
+            <ProtectedRoute requiredRole="HOST">
+              <CreateListing />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/host/dashboard"
+          element={
+            <ProtectedRoute requiredRole="HOST">
+              <HostDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute requiredRole="ADMIN">
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-bookings"
+          element={
+            <ProtectedRoute>
+              <MyBookings />
+            </ProtectedRoute>
+          }
+        />
+      </Route>
+
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+};
+
 const App = () => {
   return (
-    <ErrorBoundary
-      fallbackTitle="ROOST encountered an error"
-      fallbackMessage="Please refresh the page or try again later."
-    >
-      <BrowserRouter>
+    <ToastProvider>
+      <Router>
         <AuthProvider>
-          <ToastProvider>
-            <PublicLayout>
-              <Suspense fallback={<PageLoader />}>
-                <Routes>
-                  {/* Public routes */}
-                  <Route path="/" element={<Home />} />
-                  <Route path="/search" element={<Search />} />
-                  <Route path="/listing/:slug" element={<ListingDetail />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-
-                  {/* Guest routes */}
-                  <Route
-                    path="/bookings"
-                    element={
-                      <ProtectedRoute>
-                        <MyBookings />
-                      </ProtectedRoute>
-                    }
-                  />
-
-                  {/* Host routes */}
-                  <Route
-                    path="/host/dashboard"
-                    element={
-                      <ProtectedRoute requiredRole="HOST">
-                        <HostDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/host/listings/new"
-                    element={
-                      <ProtectedRoute requiredRole="HOST">
-                        <CreateListing />
-                      </ProtectedRoute>
-                    }
-                  />
-
-                  {/* Admin routes */}
-                  <Route
-                    path="/admin"
-                    element={
-                      <ProtectedRoute requiredRole="ADMIN">
-                        <AdminDashboard />
-                      </ProtectedRoute>
-                    }
-                  />
-
-                  {/* 404 - Must be last */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-            </PublicLayout>
-          </ToastProvider>
+          <AppRoutes />
         </AuthProvider>
-      </BrowserRouter>
-    </ErrorBoundary>
+      </Router>
+    </ToastProvider>
   );
 };
 
